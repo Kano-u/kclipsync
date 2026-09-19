@@ -59,33 +59,72 @@ final class Common {
     }
 
     /**
+    /**
      * KernelSU only exposes su in the shell mount namespace on this device, so the app process
-     * cannot run it. system_server has system UID and can apply the same power exemptions.
+     * cannot run it. system_server applies the power exemptions through framework services instead.
      */
     private static boolean applySystemKeepAlive() {
-        String script = "dumpsys deviceidle whitelist +" + PACKAGE
-                + "; cmd appops set " + PACKAGE + " RUN_IN_BACKGROUND allow"
-                + "; cmd appops set " + PACKAGE + " RUN_ANY_IN_BACKGROUND allow"
-                + "; cmd appops set " + PACKAGE + " START_FOREGROUND allow"
-                + "; cmd appops set " + PACKAGE + " SYSTEM_EXEMPT_FROM_POWER_RESTRICTIONS allow"
-                + "; am set-standby-bucket " + PACKAGE + " exempted"
-                + " || am set-standby-bucket " + PACKAGE + " active";
+        android.content.Context context = systemContext();
+        if (context == null) return false;
+        int uid = -1;
         try {
-            Process process = new ProcessBuilder("/system/bin/sh", "-c", script)
-                    .redirectErrorStream(true).start();
-            try (java.io.BufferedReader reader = new java.io.BufferedReader(
-                    new java.io.InputStreamReader(process.getInputStream()))) {
-                while (reader.readLine() != null) {
-                }
-            }
-            boolean ok = process.waitFor(10, java.util.concurrent.TimeUnit.SECONDS)
-                    && process.exitValue() == 0;
-            Log.i(TAG, "system_server keep-alive " + (ok ? "applied" : "failed"));
-            return ok;
-        } catch (Throwable t) {
-            Log.w(TAG, "system_server keep-alive unavailable: " + t);
-            return false;
+            uid = context.getPackageManager().getPackageUid(PACKAGE, 0);
+        } catch (Throwable ignored) {
         }
+
+        boolean deviceIdle = false;
+        try {
+            Object binder = Class.forName("android.os.ServiceManager")
+                    .getMethod("getService", String.class).invoke(null, "deviceidle");
+            Object controller = Class.forName("android.os.IDeviceIdleController$Stub")
+                    .getMethod("asInterface", android.os.IBinder.class).invoke(null, binder);
+            controller.getClass().getMethod("addPowerSaveWhitelistApp", String.class)
+                    .invoke(controller, PACKAGE);
+            deviceIdle = true;
+        } catch (Throwable t) {
+            Log.w(TAG, "deviceidle whitelist unavailable: " + t);
+        }
+
+        boolean appOps = false;
+        if (uid >= 0) {
+            try {
+                Object manager = context.getSystemService(android.content.Context.APP_OPS_SERVICE);
+                Method setMode = Class.forName("android.app.AppOpsManager")
+                        .getMethod("setMode", String.class, int.class, String.class, int.class);
+                appOps = true;
+                for (String op : new String[]{
+                        "android:run_in_background",
+                        "android:run_any_in_background",
+                        "android:start_foreground",
+                        "android:system_exempt_from_power_restrictions"}) {
+                    try {
+                        setMode.invoke(manager, op, uid, PACKAGE, 0);
+                    } catch (Throwable t) {
+                        appOps = false;
+                        Log.w(TAG, "appop " + op + " unavailable: " + t);
+                    }
+                }
+            } catch (Throwable t) {
+                Log.w(TAG, "appops unavailable: " + t);
+            }
+        }
+
+        boolean bucket = false;
+        if (uid >= 0) {
+            try {
+                Object manager = context.getSystemService(android.content.Context.USAGE_STATS_SERVICE);
+                Method setBucket = Class.forName("android.app.usage.UsageStatsManager")
+                        .getMethod("setAppStandbyBucket", String.class, int.class);
+                setBucket.invoke(manager, PACKAGE, 50 /* STANDBY_BUCKET_EXEMPTED */);
+                bucket = true;
+            } catch (Throwable t) {
+                Log.w(TAG, "standby bucket unavailable: " + t);
+            }
+        }
+
+        Log.i(TAG, "system_server keep-alive [deviceidle=" + deviceIdle
+                + " appops=" + appOps + " bucket=" + bucket + "]");
+        return deviceIdle || appOps || bucket;
     }
 
     private static void notifyService(boolean hooked, boolean keepalive) {
