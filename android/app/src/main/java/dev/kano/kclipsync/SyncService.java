@@ -17,6 +17,7 @@ import android.os.SystemClock;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.net.NetworkInterface;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
@@ -74,6 +75,7 @@ public class SyncService extends Service {
 
     private volatile Network activeNetwork;
     private volatile boolean hasLan;
+    private volatile String lastLanSignature = "";
     private volatile boolean xposedHooked;
     private volatile int listenPort;
     private volatile ServerSocket listener;
@@ -91,6 +93,7 @@ public class SyncService extends Service {
         public void onLost(Network network) {
             if (network.equals(activeNetwork)) {
                 activeNetwork = null;
+                lastLanSignature = "";
                 hasLan = false;
                 stopListener();
                 if (advertiser != null) {
@@ -238,15 +241,23 @@ public class SyncService extends Service {
 
     /** Restart discovery when the set of usable LAN interfaces changes. */
     private void networkLoop() {
-        Boolean last = null;
         while (running.get()) {
-            boolean now = Beacon.hasLanInterface(this);
-            if (last == null || now != last || (now && listener == null)) {
-                last = now;
+            String signature = lanSignature();
+            if (!signature.equals(lastLanSignature) || (hasLan && listener == null)) {
+                lastLanSignature = signature;
                 applyNetwork(connectivity == null ? null : connectivity.getActiveNetwork());
             }
             sleep(3_000);
         }
+    }
+
+    private String lanSignature() {
+        List<String> names = new ArrayList<>();
+        for (NetworkInterface network : Beacon.lanInterfaces()) {
+            names.add(network.getName());
+        }
+        java.util.Collections.sort(names);
+        return String.join(",", names);
     }
 
     /** Keep the UI's liveness timestamp fresh even while the service is idle. */
@@ -271,6 +282,7 @@ public class SyncService extends Service {
         if (!hasInterface) {
             activeNetwork = network;
             hasLan = false;
+            lastLanSignature = "";
             stopListener();
             dropLinks();
             clearDialState();
@@ -284,6 +296,7 @@ public class SyncService extends Service {
         }
         if (java.util.Objects.equals(network, activeNetwork) && hasLan && listener != null) return;
         activeNetwork = network;
+        if (!hasLan) lastLanSignature = lanSignature();
         hasLan = true;
         dropLinks();
         clearDialState();
@@ -320,6 +333,7 @@ public class SyncService extends Service {
         Network network = connectivity == null ? null : connectivity.getActiveNetwork();
         activeNetwork = null;
         hasLan = false;
+        lastLanSignature = "";
         applyNetwork(network);
     }
 
