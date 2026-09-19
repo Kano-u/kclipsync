@@ -665,7 +665,9 @@ public class SyncService extends Service {
         String text = null;
         for (int i = 0; i < clip.getItemCount(); i++) {
             ClipData.Item item = clip.getItemAt(i);
-            CharSequence value = item.getText() != null ? item.getText() : item.coerceToText(this);
+            // getText() is null for image/file ClipData; coerceToText() would turn a URI into
+            // text and violate the text-only contract.
+            CharSequence value = item.getText();
             if (value != null) {
                 text = value.toString();
                 if (!text.isEmpty()) break;
