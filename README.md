@@ -43,7 +43,9 @@ log_max_bytes = 1048576
 2. 安装到两台 Android 15 手机。
 3. 在 LSPosed 中启用 **KClipSync**，勾选 `system_server`，然后重启手机。
 4. 打开应用，确认端口为 `47631`，点击“启动”。
-5. 允许 root 请求；应用会执行 doze 白名单、后台 appops 和 standby bucket 豁免。
+5. 应用启动后，system_server 模块会直接通过系统服务给 KClipSync 加入 doze 白名单、后台
+   appops 和 standby bucket 豁免，不需要应用进程能执行 `su`。修改模块代码后需要重新安装
+   APK 并重启一次手机，新的 hook 才会生效。
 
 未启用 LSPosed 时，电脑到手机仍能同步；Android 在后台复制文本到电脑可能失败，因为系统
 默认限制后台读取剪贴板。
