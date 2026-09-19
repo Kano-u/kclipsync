@@ -66,6 +66,12 @@ public final class StatusStore {
         return new File(context.getApplicationContext().getFilesDir(), "status.json");
     }
 
+    /** The system_server hook drops a timestamped marker when its hooks install successfully. */
+    private static boolean hookMarkerPresent(Context context) {
+        File marker = new File(context.getApplicationContext().getFilesDir(), "xposed_hook");
+        return marker.isFile();
+    }
+
     public static synchronized void write(Context context, String state, String network, String detail,
                                           boolean rootAllowed, boolean xposedHooked, List<Peer> peers) {
         try {
@@ -97,6 +103,7 @@ public final class StatusStore {
     }
 
     public static Snapshot read(Context context) {
+        boolean marker = hookMarkerPresent(context);
         try (FileInputStream in = new FileInputStream(file(context))) {
             JSONObject object = new JSONObject(new String(in.readAllBytes(), StandardCharsets.UTF_8));
             List<Peer> peers = new ArrayList<>();
@@ -117,7 +124,7 @@ public final class StatusStore {
                     object.isNull("detail") ? null : object.optString("detail"),
                     object.optLong("timestamp", 0),
                     object.optBoolean("root", false),
-                    object.optBoolean("xposed", false),
+                    object.optBoolean("xposed", false) || marker,
                     peers);
         } catch (Exception e) {
             return new Snapshot(STOPPED, null, null, 0, false, false, new ArrayList<>());

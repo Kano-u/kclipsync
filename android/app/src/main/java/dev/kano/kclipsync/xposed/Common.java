@@ -3,6 +3,7 @@ package dev.kano.kclipsync.xposed;
 import android.util.Log;
 
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.lang.reflect.Method;
 
 /**
@@ -47,6 +48,7 @@ final class Common {
 
     static void markHooked() {
         Log.i(TAG, "system_server clipboard hooks installed");
+        writeHookMarker();
         handler().post(() -> {
             try {
                 android.content.Context context = systemContext();
@@ -56,6 +58,18 @@ final class Common {
             } catch (Throwable ignored) {
             }
         });
+    }
+
+    /** Best-effort marker in app storage; system_server may be unable to create it. */
+    private static void writeHookMarker() {
+        try {
+            java.io.File marker = new java.io.File("/data/data/" + PACKAGE + "/files/xposed_hook");
+            try (FileOutputStream out = new FileOutputStream(marker, false)) {
+                out.write((System.currentTimeMillis() + " " + android.os.Process.myPid() + "\n")
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            }
+        } catch (Throwable ignored) {
+        }
     }
 
     static Method clipSetter(Class<?> service) {

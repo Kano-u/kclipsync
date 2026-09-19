@@ -85,6 +85,33 @@ mod platform {
     }
 
     pub fn start(events: mpsc::Sender<Event>) -> Result<Sender> {
+        let (initialized_tx, initialized_rx) = mpsc::channel();
+        let events_for_host = events.clone();
+        std::thread::spawn(move || {
+            let sender = match create_window(events) {
+                Ok(sender) => {
+                    if initialized_tx.send(Ok(sender)).is_err() {
+                        return;
+                    }
+                    sender
+                }
+                Err(error) => {
+                    let _ = initialized_tx.send(Err(format!("{error:#}")));
+                    return;
+                }
+            };
+            if let Err(error) = run_message_loop(&sender) {
+                let _ = events_for_host.send(Event::Error(format!("剪贴板消息循环结束：{error}")));
+            }
+        });
+        match initialized_rx.recv() {
+            Ok(Ok(sender)) => Ok(sender),
+            Ok(Err(error)) => bail!("{error}"),
+            Err(error) => bail!("剪贴板窗口线程未返回：{error}"),
+        }
+    }
+
+    fn create_window(events: mpsc::Sender<Event>) -> Result<Sender> {
         let instance = unsafe { GetModuleHandleW(None)? };
         let class_name = w!("KClipSyncClipboardWindow");
         let state = Box::into_raw(Box::new(State {

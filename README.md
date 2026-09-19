@@ -22,6 +22,10 @@ cargo build --release --offline
 程序目录只使用 `config.toml`，默认端口 `47631`，默认最大文本 1 MiB。首次监听时如果
 Windows 弹出防火墙提示，请只允许专用网络。程序不安装服务、不写注册表、不注册开机启动。
 
+除了 mDNS，程序还会在每个可用网卡上使用 UDP `47632` 发送发现广播。手机开启热点、电脑接
+入热点这类“热点网卡不是系统默认路由”的场景，同样能发现对端。若防火墙没有一次性放行，请
+同时允许专用网络上的 TCP `47631` 与 UDP `47632`。
+
 配置示例：
 
 ```toml
@@ -34,6 +38,8 @@ log_max_bytes = 1048576
 ## Android 安装
 
 1. 从 GitHub Actions 的 `kclipsync-debug-apk` 产物下载 `kclipsync-debug.apk`。
+   也可以直接下载最近一次公开调试包：
+   <https://github.com/Kano-u/kclipsync/releases/download/android-debug/kclipsync-debug.apk>
 2. 安装到两台 Android 15 手机。
 3. 在 LSPosed 中启用 **KClipSync**，勾选 `system_server`，然后重启手机。
 4. 打开应用，确认端口为 `47631`，点击“启动”。
@@ -45,6 +51,7 @@ log_max_bytes = 1048576
 ## 网络行为
 
 - 服务类型：`_kclipsync._tcp.local.`，TXT 记录包含 `v=1` 和节点 ID。
+- 除 mDNS 外，还会在每个可用网卡上通过 UDP `47632` 广播/监听，支持手机热点。
 - TCP 明文传输，帧格式为 `u32` 大端长度 + 1 字节类型 + UTF-8 JSON。
 - 支持 HELLO、CLIP、PING、PONG、BYE。
 - 文本统一规范化为 LF；Windows 写入剪贴板时转换为 CRLF。
