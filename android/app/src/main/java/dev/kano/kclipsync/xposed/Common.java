@@ -17,11 +17,14 @@ final class Common {
     static final String SERVICE = PACKAGE + ".SyncService";
     static final String ACTION_CLIP = PACKAGE + ".CLIP";
     static final String ACTION_HOOK_STATUS = PACKAGE + ".HOOK_STATUS";
+    static final String EXTRA_KEEPALIVE = "keepalive";
     static final String AUTOSTART = PACKAGE + ".BootReceiver";
     static final long WATCHDOG_AFTER_DEATH_MS = 3_000;
     static final long POLL_WITH_HOOK_MS = 60_000;
     static final long POLL_WITHOUT_HOOK_MS = 15_000;
     static volatile long pollMs = POLL_WITHOUT_HOOK_MS;
+
+    private static volatile boolean systemKeepAlive;
 
     private static final android.os.HandlerThread WORKER =
             new android.os.HandlerThread("kclipsync-hook", android.os.Process.THREAD_PRIORITY_BACKGROUND);
@@ -50,14 +53,50 @@ final class Common {
         Log.i(TAG, "system_server clipboard hooks installed");
         writeHookMarker();
         handler().post(() -> {
-            try {
-                android.content.Context context = systemContext();
-                if (context == null) return;
-                context.startService(new android.content.Intent(ACTION_HOOK_STATUS)
-                        .setClassName(PACKAGE, SERVICE));
-            } catch (Throwable ignored) {
-            }
+            systemKeepAlive = applySystemKeepAlive();
+            notifyService(true, systemKeepAlive);
         });
+    }
+
+    /**
+     * KernelSU only exposes su in the shell mount namespace on this device, so the app process
+     * cannot run it. system_server has system UID and can apply the same power exemptions.
+     */
+    private static boolean applySystemKeepAlive() {
+        String script = "dumpsys deviceidle whitelist +" + PACKAGE
+                + "; cmd appops set " + PACKAGE + " RUN_IN_BACKGROUND allow"
+                + "; cmd appops set " + PACKAGE + " RUN_ANY_IN_BACKGROUND allow"
+                + "; cmd appops set " + PACKAGE + " START_FOREGROUND allow"
+                + "; cmd appops set " + PACKAGE + " SYSTEM_EXEMPT_FROM_POWER_RESTRICTIONS allow"
+                + "; am set-standby-bucket " + PACKAGE + " exempted"
+                + " || am set-standby-bucket " + PACKAGE + " active";
+        try {
+            Process process = new ProcessBuilder("/system/bin/sh", "-c", script)
+                    .redirectErrorStream(true).start();
+            try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(process.getInputStream()))) {
+                while (reader.readLine() != null) {
+                }
+            }
+            boolean ok = process.waitFor(10, java.util.concurrent.TimeUnit.SECONDS)
+                    && process.exitValue() == 0;
+            Log.i(TAG, "system_server keep-alive " + (ok ? "applied" : "failed"));
+            return ok;
+        } catch (Throwable t) {
+            Log.w(TAG, "system_server keep-alive unavailable: " + t);
+            return false;
+        }
+    }
+
+    private static void notifyService(boolean hooked, boolean keepalive) {
+        try {
+            android.content.Context context = systemContext();
+            if (context == null) return;
+            context.startService(new android.content.Intent(ACTION_HOOK_STATUS)
+                    .setClassName(PACKAGE, SERVICE)
+                    .putExtra(EXTRA_KEEPALIVE, hooked && keepalive));
+        } catch (Throwable ignored) {
+        }
     }
 
     /** Best-effort marker in app storage; system_server may be unable to create it. */
@@ -245,6 +284,7 @@ final class Common {
                                 .setClassName(PACKAGE, SERVICE));
                         Log.i(TAG, "watchdog started SyncService");
                     }
+                    notifyService(true, systemKeepAlive);
                 }
             } catch (Throwable t) {
                 Log.w(TAG, "watchdog: " + t);

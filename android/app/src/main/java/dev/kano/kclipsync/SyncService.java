@@ -52,6 +52,7 @@ public class SyncService extends Service {
     public static final String ACTION_RELOAD = "dev.kano.kclipsync.RELOAD";
     public static final String ACTION_STOP = "dev.kano.kclipsync.STOP";
     public static final String ACTION_HOOK_STATUS = "dev.kano.kclipsync.HOOK_STATUS";
+    private static final String EXTRA_KEEPALIVE = "keepalive";
 
     private final Object lock = new Object();
     private final Map<String, Link> links = new LinkedHashMap<>();
@@ -139,6 +140,7 @@ public class SyncService extends Service {
         connectivity = getSystemService(ConnectivityManager.class);
         clipboard = getSystemService(ClipboardManager.class);
         startForeground();
+        xposedHooked = new java.io.File(getFilesDir(), "xposed_hook").isFile();
         clipboard.addPrimaryClipChangedListener(clipboardListener);
         if (connectivity != null) connectivity.registerDefaultNetworkCallback(networkCallback);
         if (connectivity != null) {
@@ -153,7 +155,9 @@ public class SyncService extends Service {
             }
         }
         running.set(true);
-        Thread root = new Thread(() -> rootAllowed.set(Root.keepAlive(getPackageName())), "kclipsync-root");
+        Thread root = new Thread(() -> {
+            if (Root.keepAlive(getPackageName())) rootAllowed.set(true);
+        }, "kclipsync-root");
         root.setDaemon(true);
         root.start();
         workers.execute(this::pingLoop);
@@ -183,6 +187,7 @@ public class SyncService extends Service {
             }
             if (ACTION_HOOK_STATUS.equals(action)) {
                 xposedHooked = true;
+                if (intent.getBooleanExtra(EXTRA_KEEPALIVE, false)) rootAllowed.set(true);
                 publishStatus(null);
                 return START_STICKY;
             }
