@@ -114,16 +114,10 @@ public final class Mdns {
             // Prefer the network-scoped overload when present so multicast cannot leak to a
             // cellular default. Fall back to the unscoped overload on builds that lack it.
             if (network != null) {
-                try {
-                    nsd.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, network,
-                            session.executor, session.listener);
-                } catch (NoSuchMethodError error) {
-                    nsd.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD,
-                            session.executor, session.listener);
-                }
-            } else {
-                nsd.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD,
+                nsd.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, network,
                         session.executor, session.listener);
+            } else {
+                nsd.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, session.listener);
             }
             synchronized (session.done) {
                 session.done.wait(timeoutMs);

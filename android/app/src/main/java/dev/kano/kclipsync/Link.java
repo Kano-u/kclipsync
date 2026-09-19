@@ -4,6 +4,7 @@ import java.io.Closeable;
 import java.io.DataInputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import android.net.Network;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.ByteBuffer;
@@ -48,12 +49,12 @@ public final class Link implements Closeable {
         this.out = socket.getOutputStream();
     }
 
-    public static Link connect(java.net.Network network, InetSocketAddress address, int timeoutMs)
+    public static Link connect(Network network, InetSocketAddress address, int timeoutMs)
             throws IOException {
         return connect(network, address, timeoutMs, "");
     }
 
-    public static Link connect(java.net.Network network, InetSocketAddress address, int timeoutMs,
+    public static Link connect(Network network, InetSocketAddress address, int timeoutMs,
                               String localNodeId) throws IOException {
         Socket socket = new Socket();
         try {

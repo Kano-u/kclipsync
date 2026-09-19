@@ -88,8 +88,8 @@ final class Common {
             if (context == null) return;
             android.content.Intent intent = new android.content.Intent(ACTION_CLIP)
                     .setClassName(PACKAGE, SERVICE)
-                    .setClipData(clip)
                     .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            intent.setClipData(clip);
             try {
                 context.startService(intent);
             } catch (Throwable t) {
