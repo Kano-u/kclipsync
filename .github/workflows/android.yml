@@ -1,0 +1,49 @@
+name: android
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "android/**"
+      - ".github/workflows/android.yml"
+  pull_request:
+    paths:
+      - "android/**"
+      - ".github/workflows/android.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Install Android SDK components
+        run: |
+          SDKMANAGER=$(ls -d "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager | tail -n1)
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+          "$SDKMANAGER" "platforms;android-35" "build-tools;36.0.0" >/dev/null
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.6.0"
+      - name: Generate and verify Gradle Wrapper
+        run: |
+          gradle wrapper --gradle-version 9.6.0 --distribution-type bin --no-daemon
+          test -x gradlew
+          test -f gradle/wrapper/gradle-wrapper.jar
+      - name: Build debug APK
+        run: ./gradlew assembleDebug --no-daemon
+      - name: Collect APK
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/app-debug.apk dist/kclipsync-debug.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kclipsync-debug-apk
+          path: android/dist/kclipsync-debug.apk

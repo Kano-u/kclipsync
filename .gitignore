@@ -1,0 +1,11 @@
+target/
+dist/
+*.log
+*.log.old
+config.toml
+config.json
+install-state.json
+.gradle/
+local.properties
+android/.gradle/
+android/app/build/

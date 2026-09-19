@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">KClipSync</string>
+    <string name="app_desc">在同一局域网内同步纯文本剪贴板。</string>
+    <string name="state_stopped">已停止</string>
+    <string name="state_starting">正在启动</string>
+    <string name="state_running">运行中</string>
+    <string name="state_no_network">无局域网</string>
+    <string name="action_start">启动</string>
+    <string name="action_stop">停止</string>
+    <string name="action_apply">保存并应用</string>
+    <string name="section_status">状态</string>
+    <string name="section_network">网络</string>
+    <string name="section_devices">已连接设备</string>
+    <string name="section_settings">设置</string>
+    <string name="section_environment">后台能力</string>
+    <string name="section_log">日志</string>
+    <string name="label_service">同步服务</string>
+    <string name="label_network">当前网络</string>
+    <string name="label_port">监听端口</string>
+    <string name="label_max_bytes">最大文本（字节）</string>
+    <string name="label_root">Root keep-alive</string>
+    <string name="label_xposed">Xposed 后台剪贴板</string>
+    <string name="hint_port">端口</string>
+    <string name="hint_max_bytes">最大文本字节数</string>
+    <string name="status_unknown">未知</string>
+    <string name="status_not_running">未运行</string>
+    <string name="status_ok">可用</string>
+    <string name="status_unavailable">不可用</string>
+    <string name="status_checking">检查中</string>
+    <string name="devices_none">暂无已连接设备</string>
+    <string name="devices_discovering">正在局域网中发现设备…</string>
+    <string name="log_empty">暂无日志</string>
+    <string name="log_clear">清空日志</string>
+    <string name="settings_saved">设置已保存</string>
+    <string name="settings_invalid">端口或最大文本设置无效</string>
+    <string name="xposed_help">需要在 LSPosed 中启用本模块并勾选 system_server，然后重启手机。未启用时，电脑到手机仍可工作；手机后台复制到电脑可能失败。</string>
+</resources>
