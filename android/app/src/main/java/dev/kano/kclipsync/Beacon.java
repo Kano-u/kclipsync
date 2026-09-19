@@ -137,6 +137,11 @@ public final class Beacon {
                     for (InterfaceAddress address : network.getInterfaceAddresses()) {
                         InetAddress broadcast = address.getBroadcast();
                         if (broadcast == null) continue;
+                        try (DatagramSocket socket = new DatagramSocket(null)) {
+                            socket.setReuseAddress(true);
+                            socket.setBroadcast(true);
+                            socket.bind(new InetSocketAddress(address.getAddress(), 0));
+                            socket.send(new DatagramPacket(payload, payload.length, broadcast, PORT));
                         } catch (Exception e) {
                             LogStore.warn("广播发送失败 " + network.getName() + "：" + e.getMessage());
                         }
