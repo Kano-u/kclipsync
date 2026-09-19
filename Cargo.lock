@@ -343,6 +343,7 @@ dependencies = [
  "flume",
  "hex",
  "hostname",
+ "if-addrs",
  "mdns-sd",
  "rand",
  "serde",

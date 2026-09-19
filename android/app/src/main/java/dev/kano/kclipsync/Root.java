@@ -26,7 +26,16 @@ public final class Root {
         }
         script.append("echo __done__\n");
         try {
-            Process process = Runtime.getRuntime().exec("su");
+            // The app process may not inherit the shell's PATH on Android 15; KSU/Magisk's
+            // binary is at /system/bin/su. Prefer the absolute path and fall back to PATH.
+            ProcessBuilder builder = new ProcessBuilder("/system/bin/su");
+            builder.redirectErrorStream(true);
+            Process process;
+            try {
+                process = builder.start();
+            } catch (Exception e) {
+                process = Runtime.getRuntime().exec("su");
+            }
             try (Writer writer = new OutputStreamWriter(process.getOutputStream())) {
                 writer.write(script.toString());
                 writer.write("exit\n");

@@ -9,6 +9,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use uuid::Uuid;
 
+use crate::beacon;
 use crate::clipboard::{
     Event as ClipboardEvent, Sender as ClipboardSender, run_message_loop, start,
 };
@@ -366,6 +367,7 @@ impl Service {
         let name = format!("KClipSync on {}", self.shared.device);
         thread::spawn(start_mdns(self.shared.clone(), generation, name.clone()));
         thread::spawn(start_discovery(self.shared.clone(), generation, name));
+        thread::spawn(start_beacon_discovery(self.shared.clone(), generation));
         thread::spawn(start_ping_loop(self.shared.clone(), generation));
 
         if let Some(sender) = self.shared.clipboard() {
@@ -596,6 +598,79 @@ fn start_discovery(shared: Arc<Shared>, generation: u64, own_name: String) -> im
     }
 }
 
+fn start_beacon_discovery(shared: Arc<Shared>, generation: u64) -> impl FnOnce() {
+    move || {
+        let _advertiser = match beacon::Advertiser::start(
+            shared.node_id.clone(),
+            shared.device.clone(),
+            shared.config.port,
+        ) {
+            Ok(advertiser) => advertiser,
+            Err(error) => {
+                if shared.is_current(generation) {
+                    shared
+                        .logger
+                        .warn(format!("UDP beacon advertise unavailable: {error}"));
+                }
+                return;
+            }
+        };
+        let browser = match beacon::Browser::start() {
+            Ok(browser) => browser,
+            Err(error) => {
+                if shared.is_current(generation) {
+                    shared
+                        .logger
+                        .warn(format!("UDP beacon browse unavailable: {error}"));
+                }
+                return;
+            }
+        };
+        if shared.is_current(generation) {
+            shared
+                .logger
+                .info(format!("UDP beacon 端口 {}", beacon::BEACON_PORT));
+        }
+        let mut dialers = std::collections::HashMap::<String, DiscoveredDialer>::new();
+        while shared.is_current(generation) {
+            let mut active = HashSet::new();
+            for peer in browser.poll() {
+                if peer.node_id == shared.node_id {
+                    continue;
+                }
+                let identity = peer.identity();
+                active.insert(identity.clone());
+                let service = Discovered {
+                    name: peer.device.clone(),
+                    port: peer.port,
+                    addresses: peer.addresses,
+                    node_id: Some(peer.node_id),
+                    last_seen: peer.last_seen,
+                };
+                if let Some(dialer) = dialers.get_mut(&identity) {
+                    dialer.update(service);
+                } else {
+                    dialers.insert(
+                        identity,
+                        DiscoveredDialer::start(shared.clone(), generation, service),
+                    );
+                }
+            }
+            dialers.retain(|identity, dialer| {
+                if active.contains(identity) {
+                    true
+                } else {
+                    dialer.stop();
+                    false
+                }
+            });
+            sleep_until(&shared, generation, &AtomicBool::new(false), MDNS_REFRESH);
+        }
+        for dialer in dialers.values() {
+            dialer.stop();
+        }
+    }
+}
 fn start_ping_loop(shared: Arc<Shared>, generation: u64) -> impl FnOnce() {
     move || {
         while shared.is_current(generation) {

@@ -78,6 +78,8 @@ public class SyncService extends Service {
     private volatile int listenPort;
     private volatile ServerSocket listener;
     private volatile Mdns.Advertiser advertiser;
+    private volatile Beacon.Advertiser beaconAdvertiser;
+    private volatile Beacon.Browser beaconBrowser;
 
     private final ConnectivityManager.NetworkCallback networkCallback = new ConnectivityManager.NetworkCallback() {
         @Override
@@ -99,6 +101,11 @@ public class SyncService extends Service {
                 dropLinks();
                 publishStatus("网络连接已断开");
             }
+        }
+
+        @Override
+        public void onLinkPropertiesChanged(Network network, android.net.LinkProperties properties) {
+            applyNetwork(network);
         }
 
         @Override
@@ -126,12 +133,24 @@ public class SyncService extends Service {
         startForeground();
         clipboard.addPrimaryClipChangedListener(clipboardListener);
         if (connectivity != null) connectivity.registerDefaultNetworkCallback(networkCallback);
+        if (connectivity != null) {
+            try {
+                connectivity.registerNetworkCallback(
+                        new android.net.NetworkRequest.Builder()
+                                .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+                                .addTransportType(NetworkCapabilities.TRANSPORT_ETHERNET)
+                                .build(),
+                        networkCallback);
+            } catch (Exception ignored) {
+            }
+        }
         running.set(true);
         Thread root = new Thread(() -> rootAllowed.set(Root.keepAlive(getPackageName())), "kclipsync-root");
         root.setDaemon(true);
         root.start();
         workers.execute(this::pingLoop);
         workers.execute(this::statusLoop);
+        workers.execute(this::networkLoop);
         applyNetwork(connectivity == null ? null : connectivity.getActiveNetwork());
         LogStore.info("同步服务已启动");
         publishStatus(null);
@@ -182,6 +201,8 @@ public class SyncService extends Service {
             }
         }
         if (advertiser != null) advertiser.close();
+        if (beaconAdvertiser != null) beaconAdvertiser.close();
+        if (beaconBrowser != null) beaconBrowser.close();
         stopListener();
         dropLinks();
         workers.shutdownNow();
@@ -215,6 +236,19 @@ public class SyncService extends Service {
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
     }
 
+    /** Restart discovery when the set of usable LAN interfaces changes. */
+    private void networkLoop() {
+        Boolean last = null;
+        while (running.get()) {
+            boolean now = Beacon.hasLanInterface(this);
+            if (last == null || now != last || (now && listener == null)) {
+                last = now;
+                applyNetwork(connectivity == null ? null : connectivity.getActiveNetwork());
+            }
+            sleep(3_000);
+        }
+    }
+
     /** Keep the UI's liveness timestamp fresh even while the service is idle. */
     private void statusLoop() {
         while (running.get()) {
@@ -233,7 +267,8 @@ public class SyncService extends Service {
         if (!running.get()) return;
         NetworkCapabilities capabilities = connectivity == null || network == null
                 ? null : connectivity.getNetworkCapabilities(network);
-        if (!isLan(network, capabilities)) {
+        boolean hasInterface = Beacon.hasLanInterface(this) || isLan(network, capabilities);
+        if (!hasInterface) {
             activeNetwork = network;
             hasLan = false;
             stopListener();
@@ -243,10 +278,11 @@ public class SyncService extends Service {
                 advertiser.close();
                 advertiser = null;
             }
+            stopBeacon();
             publishStatus("没有可用的 Wi-Fi 或以太网网络");
             return;
         }
-        if (network.equals(activeNetwork) && hasLan && listener != null) return;
+        if (java.util.Objects.equals(network, activeNetwork) && hasLan && listener != null) return;
         activeNetwork = network;
         hasLan = true;
         dropLinks();
@@ -257,7 +293,8 @@ public class SyncService extends Service {
         startListener(current.port);
         advertiser = Mdns.advertise(this, network, deviceName(), current.port,
                 Settings.nodeId(this));
-        LogStore.info("已绑定当前 Wi-Fi/以太网网络，端口 " + listenPort);
+        startBeacon();
+        LogStore.info("已绑定局域网接口，端口 " + listenPort);
         publishStatus(null);
         workers.execute(this::discoveryLoop);
     }
@@ -268,11 +305,30 @@ public class SyncService extends Service {
         return "KClipSync on " + name;
     }
 
+    private void stopBeacon() {
+        if (beaconAdvertiser != null) {
+            beaconAdvertiser.close();
+            beaconAdvertiser = null;
+        }
+        if (beaconBrowser != null) {
+            beaconBrowser.close();
+            beaconBrowser = null;
+        }
+    }
+
     private void restartNetwork() {
         Network network = connectivity == null ? null : connectivity.getActiveNetwork();
         activeNetwork = null;
         hasLan = false;
         applyNetwork(network);
+    }
+
+    private void startBeacon() {
+        stopBeacon();
+        Settings current = settings.get();
+        beaconAdvertiser = Beacon.advertise(Settings.nodeId(this), deviceName(), current.port);
+        beaconBrowser = Beacon.browse();
+        LogStore.info("UDP 广播发现已启动，端口 " + Beacon.PORT);
     }
 
     private void startListener(int port) {
@@ -336,15 +392,25 @@ public class SyncService extends Service {
     }
 
     private void discoveryLoop() {
-        Network network = activeNetwork;
-        while (running.get() && hasLan && network.equals(activeNetwork)) {
+        while (running.get() && hasLan) {
             try {
-                List<Mdns.Instance> found = Mdns.discover(this, network, DISCOVERY_MS);
+                List<Mdns.Instance> found = new ArrayList<>();
+                Network network = activeNetwork;
+                if (network != null) {
+                    found.addAll(Mdns.discover(this, network, DISCOVERY_MS));
+                }
+                Beacon.Browser browser = beaconBrowser;
+                if (browser != null) {
+                    for (Beacon.Instance instance : browser.snapshot()) {
+                        found.add(new Mdns.Instance(instance.name, instance.nodeId, instance.addresses));
+                    }
+                }
                 for (Mdns.Instance instance : found) {
                     if (instance.identity().equals(Settings.nodeId(this))) continue;
                     if (hasLink(instance.identity()) || !beginDial(instance.identity())) continue;
-                    List<InetSocketAddress> addresses =
-                            Mdns.preferOnLink(this, network, instance.addresses);
+                    List<InetSocketAddress> addresses = network == null
+                            ? new ArrayList<>(instance.addresses)
+                            : Mdns.preferOnLink(this, network, instance.addresses);
                     workers.execute(() -> dial(instance, addresses));
                 }
                 publishStatus(null);
@@ -361,7 +427,7 @@ public class SyncService extends Service {
         boolean connected = false;
         try {
             for (InetSocketAddress address : addresses) {
-                if (!running.get() || network != activeNetwork) return;
+                if (!running.get() || !hasLan) return;
                 try {
                     Link link = Link.connect(network, address, 5_000, Settings.nodeId(this));
                     link.sendHello(Settings.nodeId(this), deviceName(), settings.get().port);
@@ -457,6 +523,8 @@ public class SyncService extends Service {
             }
             LogStore.info("已连接 " + link.device + " [" + link.remoteAddress() + "]");
             publishStatus(null);
+            // A direct dial can succeed over an interface that is not the default network,
+            // so the address list is tried without requiring network == activeNetwork.
             while (running.get() && link.isOpen()) {
                 Link.Frame frame = link.recv(Protocol.maxFrame(settings.get().maxBytes));
                 switch (frame.type) {

@@ -8,4 +8,5 @@ install-state.json
 .gradle/
 local.properties
 android/.gradle/
+references/
 android/app/build/

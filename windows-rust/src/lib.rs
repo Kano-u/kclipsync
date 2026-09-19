@@ -1,3 +1,4 @@
+pub mod beacon;
 pub mod clipboard;
 pub mod config;
 pub mod logger;
