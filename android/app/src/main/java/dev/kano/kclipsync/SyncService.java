@@ -429,7 +429,7 @@ public class SyncService extends Service {
             for (InetSocketAddress address : addresses) {
                 if (!running.get() || !hasLan) return;
                 try {
-                    Link link = Link.connect(network, address, 5_000, Settings.nodeId(this));
+                    Link link = connectWithFallback(network, address);
                     link.sendHello(Settings.nodeId(this), deviceName(), settings.get().port);
                     link.readHello(Protocol.maxFrame(settings.get().maxBytes));
                     link.afterHandshake();
@@ -458,6 +458,22 @@ public class SyncService extends Service {
             if (next != null && now < next) return false;
             dialing.add(identity);
             return true;
+        }
+    }
+
+    /**
+     * Prefer the network that owns the discovered address. A phone hotspot can be non-default
+     * while cellular remains the active network, so binding that active network would make the
+     * LAN address unreachable. Falling back to the system route lets the OS pick the hotspot
+     * interface without changing Wi-Fi/ethernet selection.
+     */
+    private Link connectWithFallback(Network network, InetSocketAddress address) throws IOException {
+        try {
+            return Link.connect(network, address, 5_000, Settings.nodeId(this));
+        } catch (IOException first) {
+            if (network == null) throw first;
+            LogStore.info("绑定网络连接 " + address + " 失败，尝试系统路由：" + first.getMessage());
+            return Link.connect(null, address, 5_000, Settings.nodeId(this));
         }
     }
 

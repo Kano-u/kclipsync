@@ -1,5 +1,8 @@
 name: android
 
+permissions:
+  contents: write
+
 on:
   push:
     branches: ["**"]
@@ -47,3 +50,14 @@ jobs:
         with:
           name: kclipsync-debug-apk
           path: android/dist/kclipsync-debug.apk
+      - name: Publish public debug APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-debug
+          name: KClipSync Android debug APK
+          body: |
+            Automated Android 15 debug build from the latest android workflow run.
+            This is a test build and is not signed for distribution.
+          files: android/dist/kclipsync-debug.apk
+          prerelease: true
+          make_latest: false

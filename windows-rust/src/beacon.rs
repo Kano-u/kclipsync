@@ -64,8 +64,8 @@ impl Advertiser {
         let thread = thread::spawn(move || {
             let payload = encode_beacon(&node_id, &device, port);
             while !thread_stop.load(Ordering::SeqCst) {
-                for target in broadcast_targets() {
-                    if let Ok(socket) = UdpSocket::bind(("0.0.0.0", 0)) {
+                for (interface, target) in broadcast_targets() {
+                    if let Ok(socket) = UdpSocket::bind((interface, 0)) {
                         let _ = socket.set_broadcast(true);
                         let _ = socket.send_to(&payload, target);
                     }
@@ -226,7 +226,7 @@ fn decode_beacon(data: &[u8], from: SocketAddr) -> Option<Peer> {
     })
 }
 
-fn broadcast_targets() -> Vec<SocketAddr> {
+fn broadcast_targets() -> Vec<(Ipv4Addr, SocketAddr)> {
     let mut targets = Vec::new();
     let Ok(interfaces) = if_addrs::get_if_addrs() else {
         return targets;
@@ -245,13 +245,12 @@ fn broadcast_targets() -> Vec<SocketAddr> {
             Some(broadcast) if !broadcast.is_unspecified() => broadcast,
             _ => Ipv4Addr::new(v4.ip.octets()[0], v4.ip.octets()[1], v4.ip.octets()[2], 255),
         };
-        targets.push(SocketAddr::V4(SocketAddrV4::new(broadcast, BEACON_PORT)));
+        targets.push((
+            v4.ip,
+            SocketAddr::V4(SocketAddrV4::new(broadcast, BEACON_PORT)),
+        ));
     }
-    targets.push(SocketAddr::V4(SocketAddrV4::new(
-        Ipv4Addr::BROADCAST,
-        BEACON_PORT,
-    )));
-    targets.sort();
+    targets.sort_by_key(|(ip, target)| (*ip, *target));
     targets.dedup();
     targets
 }
