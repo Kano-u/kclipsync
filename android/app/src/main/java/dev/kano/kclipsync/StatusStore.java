@@ -66,8 +66,18 @@ public final class StatusStore {
         return new File(context.getApplicationContext().getFilesDir(), "status.json");
     }
 
-    /** The system_server hook drops a timestamped marker when its hooks install successfully. */
-    private static boolean hookMarkerPresent(Context context) {
+    /**
+     * True when the system_server hook installed. It writes a global setting because
+     * system_server cannot reliably create files inside this app's private data directory.
+     */
+    public static boolean hookPresent(Context context) {
+        try {
+            if (android.provider.Settings.Global.getInt(
+                    context.getContentResolver(), "kclipsync_hook", 0) == 1) {
+                return true;
+            }
+        } catch (Throwable ignored) {
+        }
         File marker = new File(context.getApplicationContext().getFilesDir(), "xposed_hook");
         return marker.isFile();
     }
@@ -103,7 +113,7 @@ public final class StatusStore {
     }
 
     public static Snapshot read(Context context) {
-        boolean marker = hookMarkerPresent(context);
+        boolean marker = hookPresent(context);
         try (FileInputStream in = new FileInputStream(file(context))) {
             JSONObject object = new JSONObject(new String(in.readAllBytes(), StandardCharsets.UTF_8));
             List<Peer> peers = new ArrayList<>();

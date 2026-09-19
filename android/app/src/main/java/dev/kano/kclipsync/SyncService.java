@@ -140,7 +140,7 @@ public class SyncService extends Service {
         connectivity = getSystemService(ConnectivityManager.class);
         clipboard = getSystemService(ClipboardManager.class);
         startForeground();
-        xposedHooked = new java.io.File(getFilesDir(), "xposed_hook").isFile();
+        xposedHooked = StatusStore.hookPresent(this);
         clipboard.addPrimaryClipChangedListener(clipboardListener);
         if (connectivity != null) connectivity.registerDefaultNetworkCallback(networkCallback);
         if (connectivity != null) {

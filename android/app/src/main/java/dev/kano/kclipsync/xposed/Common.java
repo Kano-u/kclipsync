@@ -3,7 +3,6 @@ package dev.kano.kclipsync.xposed;
 import android.util.Log;
 
 import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.lang.reflect.Method;
 
 /**
@@ -58,7 +57,6 @@ final class Common {
         });
     }
 
-    /**
     /**
      * KernelSU only exposes su in the shell mount namespace on this device, so the app process
      * cannot run it. system_server applies the power exemptions through framework services instead.
@@ -138,13 +136,14 @@ final class Common {
         }
     }
 
-    /** Best-effort marker in app storage; system_server may be unable to create it. */
     private static void writeHookMarker() {
+        // Published through a global setting because system_server cannot write into the app's
+        // private data directory.
         try {
-            java.io.File marker = new java.io.File("/data/data/" + PACKAGE + "/files/xposed_hook");
-            try (FileOutputStream out = new FileOutputStream(marker, false)) {
-                out.write((System.currentTimeMillis() + " " + android.os.Process.myPid() + "\n")
-                        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            android.content.Context context = systemContext();
+            if (context != null) {
+                android.provider.Settings.Global.putInt(
+                        context.getContentResolver(), "kclipsync_hook", 1);
             }
         } catch (Throwable ignored) {
         }
