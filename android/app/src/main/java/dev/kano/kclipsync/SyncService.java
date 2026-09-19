@@ -57,6 +57,7 @@ public class SyncService extends Service {
     private final Map<String, Link> links = new LinkedHashMap<>();
     private final Set<String> recentHashes = new LinkedHashSet<>();
     private final Object dialLock = new Object();
+    private final Object networkLock = new Object();
     private final Set<String> dialing = new LinkedHashSet<>();
     private final Map<String, Long> nextDialAt = new LinkedHashMap<>();
     private final Map<String, Long> dialBackoff = new LinkedHashMap<>();
@@ -86,7 +87,9 @@ public class SyncService extends Service {
     private final ConnectivityManager.NetworkCallback networkCallback = new ConnectivityManager.NetworkCallback() {
         @Override
         public void onAvailable(Network network) {
-            applyNetwork(network);
+            if (isLan(network, connectivity == null ? null : connectivity.getNetworkCapabilities(network))) {
+                applyNetwork(network);
+            }
         }
 
         @Override
@@ -108,7 +111,9 @@ public class SyncService extends Service {
 
         @Override
         public void onLinkPropertiesChanged(Network network, android.net.LinkProperties properties) {
-            applyNetwork(network);
+            if (isLan(network, connectivity == null ? null : connectivity.getNetworkCapabilities(network))) {
+                applyNetwork(network);
+            }
         }
 
         @Override
@@ -243,7 +248,7 @@ public class SyncService extends Service {
     private void networkLoop() {
         while (running.get()) {
             String signature = lanSignature();
-            if (!signature.equals(lastLanSignature) || (hasLan && listener == null)) {
+            if (!signature.equals(lastLanSignature)) {
                 lastLanSignature = signature;
                 applyNetwork(connectivity == null ? null : connectivity.getActiveNetwork());
             }
@@ -275,6 +280,12 @@ public class SyncService extends Service {
     }
 
     private void applyNetwork(Network network) {
+        synchronized (networkLock) {
+            applyNetworkLocked(network);
+        }
+    }
+
+    private void applyNetworkLocked(Network network) {
         if (!running.get()) return;
         NetworkCapabilities capabilities = connectivity == null || network == null
                 ? null : connectivity.getNetworkCapabilities(network);

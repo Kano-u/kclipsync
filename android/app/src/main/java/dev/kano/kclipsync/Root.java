@@ -21,6 +21,7 @@ public final class Root {
 
     public static boolean keepAlive(String packageName) {
         StringBuilder script = new StringBuilder();
+        script.append("export PATH=/system/bin:/system/xbin:/product/bin:/vendor/bin:$PATH\n");
         for (String command : COMMANDS) {
             script.append(command.replace("%p", packageName)).append(" 2>&1\n");
         }
@@ -28,7 +29,7 @@ public final class Root {
         try {
             // The app process may not inherit the shell's PATH on Android 15; KSU/Magisk's
             // binary is at /system/bin/su. Prefer the absolute path and fall back to PATH.
-            ProcessBuilder builder = new ProcessBuilder("/system/bin/su");
+            ProcessBuilder builder = new ProcessBuilder("/system/bin/su", "-");
             builder.redirectErrorStream(true);
             Process process;
             try {
